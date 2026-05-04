@@ -1,0 +1,36 @@
+# einsub/halil-release 레포에 .github/workflows/cleanup.yml 으로 배치할 워크플로우.
+# 매주 일요일 03:00 UTC 에 실행되어 가장 최신 10개 release 만 남기고 나머지 제거.
+# 매 배포마다 dmg + .app.tar.gz + .sig 가 누적되므로 비용 통제용.
+
+name: Cleanup old releases
+
+on:
+  schedule:
+    - cron: '0 3 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete releases beyond latest 10
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          repo="${{ github.repository }}"
+          # 최신순 정렬 후 10개 초과분의 tag 만 추출
+          to_delete=$(gh release list --repo "$repo" --limit 200 \
+            --json tagName,createdAt \
+            --jq 'sort_by(.createdAt) | reverse | .[10:] | .[].tagName')
+          if [ -z "$to_delete" ]; then
+            echo "삭제할 release 없음"
+            exit 0
+          fi
+          while IFS= read -r tag; do
+            echo "Deleting release $tag"
+            gh release delete "$tag" --repo "$repo" --yes --cleanup-tag
+          done <<< "$to_delete"
